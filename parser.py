@@ -6,6 +6,8 @@ import datetime
 import numpy as np
 import os
 import pathlib
+import tqdm
+
 
 def get_top_k_industries(k, area_id, since_date, until_date):
     """
@@ -31,7 +33,8 @@ def get_top_k_industries(k, area_id, since_date, until_date):
     start_date = since_date
     top_tier_industries = []
     # выбор топ K отраслей по количеству найденных вакансий
-    for industry_id, name in industries:
+    bar = tqdm.tqdm(industries)
+    for industry_id, name in bar:
         params_for_industry = {
             'industry_id': industry_id,
             'date_from': start_date.strftime('%Y-%m-%d'),
@@ -94,7 +97,10 @@ def get_vacancies(area_id, number_of_vacancies, industry_id, from_date, until_da
             vacancies = response.json()
         else:
             vacancies['items'].extend(response.json()['items'])
+        if response.json()["page"] == response.json()["pages"]-1:
+            break
         time.sleep(np.random.uniform(0.5, 2.0))
+
     for vac in vacancies['items']:
         for key in ("area", "type", "response_url", "sort_point_distance", "published_at", "created_at", "archived",
                     "apply_alternate_url", "brand_snippet",
@@ -104,6 +110,24 @@ def get_vacancies(area_id, number_of_vacancies, industry_id, from_date, until_da
                 vac.pop(key)
         vac["employer"] = {"trusted": vac["employer"]["trusted"]}
     return vacancies["items"]
+
+
+def get_vacancies_by_parts(area_id, industry_id, from_date, until_date, number_of_parts):
+    days_in_part = (until_date - from_date).days // number_of_parts
+    from_date_part = from_date
+    until_date_part = from_date_part + datetime.timedelta(days=days_in_part-1)
+    vacancies = None
+    bar = tqdm.tqdm(range(number_of_parts))
+    for i in bar:
+        if i == number_of_parts - 1:
+            until_date_part = until_date
+        if vacancies is None:
+            vacancies = get_vacancies(area_id, 2000, industry_id, from_date_part, until_date_part)
+        else:
+            vacancies.extend(get_vacancies(area_id, 2000, industry_id, from_date_part, until_date_part))
+        from_date_part = until_date_part + datetime.timedelta(days=1)
+        until_date_part = from_date_part + datetime.timedelta(days=days_in_part-1)
+    return vacancies
 
 
 def get_metro_stations_in_city(city_id):
@@ -160,14 +184,18 @@ if __name__ == '__main__':
     clear_directory(directory_path)
     pathlib.Path('datasets').mkdir(parents=True, exist_ok=True)
     # сохранить вакансии для каждой отрасли в top_industries по количеству найденных вакансий
-    search_from_date = datetime.datetime(2023, 1, 1)
-    search_until_date = datetime.datetime(2024, 5, 6)
+    search_from_date = datetime.datetime(2024, 3, 1)
+    search_until_date = datetime.datetime(2024, 5, 10)
     moscow_city_id = 1
-    top_industries = get_top_k_industries(3, moscow_city_id, search_from_date, search_until_date)
-    for ind in top_industries:
+    print("Выбираем топ индустрии по количеству вакансий")
+    k = 3
+    top_industries = get_top_k_industries(k, moscow_city_id, search_from_date, search_until_date)
+    print("\nВыбрано!")
+    for i, ind in enumerate(top_industries):
         print(ind)
         with open(f"datasets/industry({ind[2]}).json", "w", encoding='utf-8') as outfile:
-            json.dump(get_vacancies(moscow_city_id, 2000, ind[1], search_from_date, search_until_date),
+            print(f"\nСобираем вакансии{i+1}/{k}")
+            json.dump(get_vacancies_by_parts(moscow_city_id, ind[1], search_from_date, search_until_date, 15),
                       outfile, ensure_ascii=False, indent=4)
     # сохранить координаты (широту и долготу) для каждой станции метро в Москве
     if not os.path.exists("src_files/stations.npy"):
