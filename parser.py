@@ -1,12 +1,13 @@
 # import libraries
 import requests
 import json
-import time
 import datetime
-import numpy as np
 import os
 import pathlib
+import requests
 import tqdm
+import numpy as np
+import time
 
 
 def get_top_k_industries(k, area_id, since_date, until_date):
@@ -58,7 +59,7 @@ def get_top_k_industries(k, area_id, since_date, until_date):
                 idx_min = np.argmin(found)
                 if top_tier_industries[idx_min][0] < response_industry["found"]:
                     top_tier_industries[idx_min] = (response_industry["found"], industry_id, name)
-        time.sleep(np.random.uniform(0.5, 2.0))
+        time.sleep(np.random.uniform(0.005, 0.01))
     return top_tier_industries
 
 
@@ -99,25 +100,45 @@ def get_vacancies(area_id, number_of_vacancies, industry_id, from_date, until_da
             vacancies['items'].extend(response.json()['items'])
         if response.json()["page"] == response.json()["pages"]-1:
             break
-        time.sleep(np.random.uniform(0.5, 2.0))
-
+        time.sleep(np.random.uniform(5, 10))
+    # удаление ненужных признаков
     for vac in vacancies['items']:
-        for key in ("area", "type", "response_url", "sort_point_distance", "published_at", "created_at", "archived",
-                    "apply_alternate_url", "brand_snippet",
-                    "branding", "show_logo_in_search", "insider_interview", "url", "alternate_url", "relations",
-                    "contacts", "adv_context", "adv_response_url", "immediate_redirect_url"):
-            if key in vac.keys():
-                vac.pop(key)
-        vac["employer"] = {"trusted": vac["employer"]["trusted"]}
+        needed_keys = ["is_adv_vacancy", "employment", "experience", "accept_incomplete_resumes", "accept_temporary",
+                  "working_time_modes", "working_time_intervals", "working_days", "schedule", "employer", "address", "salary", "response_letter_required", "has_test", "department", "premium"]
+        keys_to_remove = set(vac.keys()).difference(set(needed_keys))
+        for key in keys_to_remove:
+            vac.pop(key)
+        vac["employer_trusted"] = vac["employer"]["trusted"]
+        vac.pop("employer")
+        if vac["address"] is not None:
+            vac["lat"] = vac["address"]["lat"]
+            vac["lon"] = vac["address"]["lng"]
+        else:
+            vac["lat"] = None
+            vac["lon"] = None
+        vac.pop("address")
+        vac["schedule"] = vac["schedule"]["name"] if vac["schedule"] is not None else None
+        vac["experience"] = vac["experience"]["name"] if vac["experience"] is not None else None
+        vac["employment"] = vac["employment"]["name"] if vac["employment"] is not None else None
     return vacancies["items"]
 
 
 def get_vacancies_by_parts(area_id, industry_id, from_date, until_date, number_of_parts):
+    """
+    Для более хорошего сбора данных используется деление всего временного промежутка на number_of_parts частей.
+    :param area_id: Реион, в котором искать.
+    :param industry_id: Отрасль вакансий.
+    :param from_date: Начиная с даты.
+    :param until_date: Заканчивая датой.
+    :param number_of_parts: На какаое кол-во частей делится временной интервал.
+    :return: Все вакансии с изначального временного промежутка.
+    """
     days_in_part = (until_date - from_date).days // number_of_parts
     from_date_part = from_date
     until_date_part = from_date_part + datetime.timedelta(days=days_in_part-1)
     vacancies = None
     bar = tqdm.tqdm(range(number_of_parts))
+    # для каждого более маленького временного отрезка вызывается функция get_vacancies
     for i in bar:
         if i == number_of_parts - 1:
             until_date_part = until_date
@@ -192,7 +213,6 @@ if __name__ == '__main__':
     top_industries = get_top_k_industries(k, moscow_city_id, search_from_date, search_until_date)
     print("\nВыбрано!")
     for i, ind in enumerate(top_industries):
-        print(ind)
         with open(f"datasets/industry({ind[2]}).json", "w", encoding='utf-8') as outfile:
             print(f"\nСобираем вакансии{i+1}/{k}")
             json.dump(get_vacancies_by_parts(moscow_city_id, ind[1], search_from_date, search_until_date, 15),

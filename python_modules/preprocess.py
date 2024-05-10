@@ -55,33 +55,31 @@ def distance_in_meters(lat1, lon1, lat2, lon2):
     return distance
 
 
-def get_stations_count_and_distance_to_nearest(address, stations):
+def get_stations_count_and_distance_to_nearest(lat_lng, stations):
     """
     Подсчитывает количество ближайших станций метро и расстояние до ближайшей станции метро.
     :param stations: Станции в городе.
     :param address: Ячейка адреса в наборе данных, содержащая параметры адреса.
     :return: Количество ближайших станций метро и расстояние до ближайшей станции метро.
     """
-    if address is None:
+    lat_address, lon_address = lat_lng["lat"], lat_lng["lon"]
+    if lat_address is None or lon_address is None:
         return None, None
     num_stations = 0
     nearest = np.Inf
-    lat_address, lon_address = address["lat"], address["lng"]
-    if lat_address is not None and lon_address is not None:
-        # Самая удаленная точка от Красной площади находится примерно в 79 км от нее,
-        # так что за этим радиусом определенно не Москва.
-        msc_lat, msc_lng = 55.751426, 37.618879
-        if distance_in_meters(lat_address, lon_address, msc_lat, msc_lng) > 79000:
-            return None, None
-        for station in stations:
-            dist_to_station = distance_in_meters(lat_address, lon_address, station[0], station[1])
-            if dist_to_station < 1000:
-                num_stations += 1
-            nearest = min(nearest, dist_to_station)
-    else:
+    # Самая удаленная точка от Красной площади находится примерно в 79 км от нее,
+    # так что за этим радиусом определенно не Москва.
+    msc_lat, msc_lng = 55.751426, 37.618879
+    if distance_in_meters(lat_address, lon_address, msc_lat, msc_lng) > 79000:
         return None, None
-    if nearest == np.Inf:
-        return num_stations, None
+    for station in stations:
+        dist_to_station = distance_in_meters(lat_address, lon_address, station[0], station[1])
+        if dist_to_station < 1000:
+            num_stations += 1
+        nearest = min(nearest, dist_to_station)
+    # наибольшее расстояние между станцие метро и точкой на карте https://yandex.ru/maps/-/CDbVuT-x
+    if nearest > 52000:
+        return None, None
     return num_stations, nearest
 
 
